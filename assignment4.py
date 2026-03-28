@@ -58,10 +58,10 @@ def ising_energy(spins):   # Ising Energy which is the energy of a ferromagnetic
         for j in range(L):
             spin = spins[i,j]                                           # Extracts each spin from the lattice
                                                                         # The <i,j> in the formula means nearest neighours
-            r_neighbour = spins[i, (j+1)]                                     # (i,j) is the spin at location (i,j) which is
-            d_neighbour = spins[(i+1), j]                                     # multiplied by a neighbouring spin such that
-            
-            energy += -spin * (right + down)
+            r_neighbour = spins[i, (j+1) % L]                                     # (i,j) is the spin at location (i,j) which is
+            d_neighbour = spins[(i+1) % L, j]                                     # multiplied by a neighbouring spin such that
+            # Add % to set the boundary of the lattice
+            energy += -spin * (r_neighbour + d_neighbour)
     return energy                                                            # E = -(spin * neighbour spin) (summed over all (i,j))
     
 E = ising_energy(spins)
