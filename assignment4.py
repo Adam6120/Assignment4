@@ -60,7 +60,7 @@ def ising_energy(spins):   # Ising Energy which is the energy of a ferromagnetic
                                                                         # The <i,j> in the formula means nearest neighours
             r_neighbour = spins[i, (j+1) % L]                                     # (i,j) is the spin at location (i,j) which is
             d_neighbour = spins[(i+1) % L, j]                                     # multiplied by a neighbouring spin such that
-            # Add % to set the boundary of the lattice
+            
             energy += -spin * (r_neighbour + d_neighbour)
     return energy                                                            # E = -(spin * neighbour spin) (summed over all (i,j))
     
@@ -71,3 +71,31 @@ print(E)                                                                    # So
                                           # a b c d
                                           # e f g h          where (i,j) = a  s_i = a, s_j = (b, right neighbour) and (e, down neighbour)
                                           # i j k l          so the ising energy sums those: a*b + a*e for that location (i,j)
+                                          
+
+#For the metropolis algorithm, we're now interested in four neighbours per point.
+def metropolis(spins, T):
+    """
+    One sweep of the lattice
+    Using equation 9.15 from notes
+    """
+    for _ in range(L*L):                #One full sweep is L*L
+        i = random.randint(0, L-1)      # Picking random location (i,j) to flip
+        j = random.randint(0, L-1)
+
+#Taking the four neighbours
+        neighbours_sum = (
+            spins[(i-1) % L, j] + #Down
+            spins[(i+1) % L, j] + #Up
+            spins[i, (j+1) % L] + #Right
+            spins[i, (j-1) % L]   #Left
+        )
+        delta_E = 2*J*spins[i,j] * neighbours_sum  # Equation 9.15 fledged out
+        
+        #Acceptance or Rejection
+        if delta_E <= 0:
+            spins[i,j] * -1
+        else:
+            w = np.exp(-delta_E / T)   #If E > 0, this is the probability of acceptance
+            if random.random() < w:
+                spins[i,j] * -1
