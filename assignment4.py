@@ -94,8 +94,8 @@ def metropolis(spins, T):
         
         #Acceptance or Rejection
         if delta_E <= 0:
-            spins[i,j] * -1
+            spins[i,j] = -1 * spins[i,j]
         else:
             w = np.exp(-delta_E / T)   #If E > 0, this is the probability of acceptance
             if random.random() < w:
-                spins[i,j] * -1
+                spins[i,j] = -1 * spins[i,j]
