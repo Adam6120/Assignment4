@@ -15,9 +15,9 @@ from mpi4py import MPI
 comm = MPI.COMM_WORLD
 nproc = comm.Get_size()
 rank = comm.Get_rank()
-N_SIMS = 1                   # Number of sweeps of the metropolis
-N_SPLIT = N_SIMS // nproc # Splitting work among processors
-temperatures = np.linspace(1, 10, 100, 10000, 100000) #Array of temperatures 
+N_SWEEPS = 1                   # Number of sweeps of the metropolis
+N_SPLIT = N_SWEEPS // nproc # Splitting work among processors
+temperatures = np.linspace(1, 3, 30) #Array of temperatures 
 #=====================================#
 # Defining Lattice
 
@@ -108,7 +108,7 @@ def ising_sim(T):
     """
     spins = lattice()
     
-    for _ in range():
+    for _ in range(N_SWEEPS):
         energies = []
         magnetisation = []
         metropolis(spins, T)
@@ -127,7 +127,7 @@ if rank < nproc -1:
     end = start + N_SPLIT
 else:
     start = rank * N_SPLIT
-    end = N_SIMS
+    end = N_SWEEPS
     
 for T in temperatures:
     localE = 0
