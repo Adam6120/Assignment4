@@ -15,7 +15,7 @@ from mpi4py import MPI
 comm = MPI.COMM_WORLD
 nproc = comm.Get_size()
 rank = comm.Get_rank()
-N_SWEEPS = 1                   # Number of sweeps of the metropolis
+N_SWEEPS = 3                   # Number of sweeps of the metropolis
 N_SPLIT = N_SWEEPS // nproc # Splitting work among processors
 temperatures = np.linspace(1, 3, 30) #Array of temperatures 
 #=====================================#
@@ -107,19 +107,20 @@ def ising_sim(T):
     Sweeps of the ising model at a temperature T
     """
     spins = lattice()
-    
+ 
+    energies = []
+    magnetisation = []
+  
     for _ in range(N_SWEEPS):
-        energies = []
-        magnetisation = []
         metropolis(spins, T)
         energy = ising_energy(spins)
         M = np.sum(spins) #Magnetisation is the sum of all spins in the lattice.
         
-        energies.append(E)      #Storage of the energy
-        magnetisation.append(E) #Storage of the magnetisation
+        energies.append(energy)      #Storage of the energy
+        magnetisation.append(M) #Storage of the magnetisation
         
         
-    return energies, magnetisation
+    return np.mean(energies), np.mean(magnetisation)
         
 
 if rank < nproc -1:
@@ -142,4 +143,4 @@ for T in temperatures:
     globalM = comm.reduce(localM, op=MPI.SUM, root=0)
     
     if rank == 0:
-        print(f"T={T}, E={globalE}, M={globalM}")
+        print(f"T={T:.2f}, E={globalE:.2f}, M={globalM:.2f}")
