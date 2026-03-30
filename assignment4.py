@@ -94,8 +94,31 @@ def metropolis(spins, T):
         
         #Acceptance or Rejection
         if delta_E <= 0:
-            spins[i,j] = -1 * spins[i,j]
+            spins[i,j] = -1 * spins[i,j] # Flip the sign
         else:
             w = np.exp(-delta_E / T)   #If E > 0, this is the probability of acceptance
             if random.random() < w:
-                spins[i,j] = -1 * spins[i,j]
+                spins[i,j] = -1 * spins[i,j] # Flip the sign
+                
+def ising_sim(T):
+    """
+    Sweeps of the ising model at a temperature T
+    """
+    spins = lattice()
+    
+    for _ in range():
+        energies = []
+        magnetisation = []
+        metropolis(spins, T)
+        energy = ising_energy(spins)
+        M = np.sum(spins) #Magnetisation is the sum of all spins in the lattice.
+        
+        energies.append(E)      #Storage of the energy
+        magnetisation.append(E) #Storage of the magnetisation
+        
+        
+    return energies, magnetisation
+        
+
+        
+    
