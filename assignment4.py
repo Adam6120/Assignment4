@@ -17,7 +17,7 @@ nproc = comm.Get_size()
 rank = comm.Get_rank()
 N_SWEEPS = 3                   # Number of sweeps of the metropolis
 N_SPLIT = N_SWEEPS // nproc # Splitting work among processors
-temperatures = np.linspace(1, 3, 30) #Array of temperatures 
+temperatures = np.linspace(1, 10, 30) #Array of temperatures 
 #=====================================#
 # Defining Lattice
 
@@ -28,6 +28,59 @@ J = 1              # Ferromagnetic model
 
 # The energy with H = 0 reduces to E = -J * sum(i,j) of s_i s_j
 # J = 1 so this reduces further to E = -sum(i,j) of s_i s_j
+
+def XY_lattice():
+    """
+    Function which creates a lattice filled
+    with randomly oriented spins which can
+    range from 0 - 2pi
+    """
+    
+    lattice = np.zeros((L,L), dtype=float)
+    
+    for i in range(L):
+        for j in range(L):
+            lattice[i,j] = random.uniform(0, 2*np.pi) #Random uniform is a good choice
+            # since we're now allowing any value change between 0 and 2pi
+            # as opposed to the metropolis where we were restricted to two choices
+            
+    return lattice
+            
+
+def XY_Energy(spins):
+    """
+    The XY energy of the 2D Lattice
+    """
+    energy = 0
+    
+    for i in range(L):
+        for j in range(L):
+            spin = spins[i,j]
+            
+            r_neighbour = spins[i, (j+1) % L]
+            d_neighbour = spins[(i+1) % L, j]
+            
+            # -J * cos (spin of angle - neighbour spin angle)
+            energy += -J * (np.cos(spin - r_neighbour) + np.cos(spin - d_neighbour))
+    return energy
+
+def XY_Metropolis(spins, T):
+    """
+    One sweep of the XY
+    lattice.
+    """
+    for _ in range(L*L):
+        i = random.randint(0, L-1)
+        j = random.randint(0, L-1)
+    
+    #Four Neighbours
+    neighbours_sum = (
+        spins[(i-1) % L, j] + # Down
+        spins[(i+1) % L, j] + # Up
+        spins[i, (j+1) % L] + # Right
+        spins[i, (j-1) % L]   # Left
+    )
+    delta_E = 2*J*spin
 
 
 def lattice():
@@ -120,7 +173,9 @@ def ising_sim(T):
         magnetisation.append(M) #Storage of the magnetisation
         
         
-    return np.mean(energies), np.mean(magnetisation)
+    return np.mean(energies), np.mean(magnetisation), np.mean(np.array(energies)**2) # E, M and E^2
+    # np.mean(energies**2) gives an error for some reason, np.array fixes it.  
+    # These gets caught by localE, localM and localE2
         
 
 if rank < nproc -1:
@@ -133,14 +188,51 @@ else:
 for T in temperatures:
     localE = 0
     localM = 0
+    localE2 = 0
     
     for _ in range(start,end):
-        TotalE, TotalM = ising_sim(T)
+        TotalE, TotalM, TotalE2 = ising_sim(T)
         localE += TotalE
         localM += TotalM
+        localE2 += TotalE2
         
     globalE = comm.reduce(localE, op=MPI.SUM, root=0)
     globalM = comm.reduce(localM, op=MPI.SUM, root=0)
+    globalE2 = comm.reduce(localE2, op=MPI.SUM, root=0)
     
     if rank == 0:
-        print(f"T={T:.2f}, E={globalE:.2f}, M={globalM:.2f}")
+        Cv = 1/1.38E-23 * T**2 * (globalE2 - E**2)
+        print(f"T={T:.2f}, E={globalE:.2f}, M={globalM:.2f}, E2={globalE2:.2f}")
+        
+comm.Barrier()
+if rank == 0:
+    endtime = time.time()
+    print(f"Number of processors: {nproc}")
+    print(f"Timing: {endtime - starttime:.4f} seconds")
+    
+    plt.plot(temperatures, E)
+    plt.title(f'Ising Model: Energy vs Temperature for Lattice size: {L}, Processors: {nproc}')
+    plt.xlabel('Temperature (kT/J)')
+    plt.ylabel('Energy')
+    plt.savefig(f'IsingEnergy_{nproc}.png', dpi=300)
+    plt.close()
+    
+    plt.plot(temperatures, M)
+    plt.title(f'Ising Model: Energy vs Temperature for Lattice size: {L}, Processors: {nproc}')
+    plt.xlabel('Temperature (kT/J)')
+    plt.ylabel('Energy')
+    plt.savefig(f'IsingEnergy_{nproc}.png', dpi=300)
+    plt.close()
+    
+    plt.plot(temperatures, Cv)
+    plt.title(f'Ising Model: Energy vs Temperature for Lattice size: {L}, Processors: {nproc}')
+    plt.xlabel('Temperature (kT/J)')
+    plt.ylabel('Energy')
+    plt.savefig(f'IsingEnergy_{nproc}.png', dpi=300)
+    plt.close()
+    
+
+# Task 4 XY Model (Angle Incorporation)
+# The X-Y model incorporates angles into the spins, so instead of
+# spins up or down, they can have an infinite number of variations
+# in between 0 and 2pi
