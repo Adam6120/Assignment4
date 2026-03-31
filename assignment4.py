@@ -18,6 +18,7 @@ rank = comm.Get_rank()
 N_SWEEPS = 3                   # Number of sweeps of the metropolis
 N_SPLIT = N_SWEEPS // nproc # Splitting work among processors
 temperatures = np.linspace(1, 10, 30) #Array of temperatures 
+delta_angle = np.pi
 #=====================================#
 # Defining Lattice
 
@@ -28,59 +29,6 @@ J = 1              # Ferromagnetic model
 
 # The energy with H = 0 reduces to E = -J * sum(i,j) of s_i s_j
 # J = 1 so this reduces further to E = -sum(i,j) of s_i s_j
-
-def XY_lattice():
-    """
-    Function which creates a lattice filled
-    with randomly oriented spins which can
-    range from 0 - 2pi
-    """
-    
-    lattice = np.zeros((L,L), dtype=float)
-    
-    for i in range(L):
-        for j in range(L):
-            lattice[i,j] = random.uniform(0, 2*np.pi) #Random uniform is a good choice
-            # since we're now allowing any value change between 0 and 2pi
-            # as opposed to the metropolis where we were restricted to two choices
-            
-    return lattice
-            
-
-def XY_Energy(spins):
-    """
-    The XY energy of the 2D Lattice
-    """
-    energy = 0
-    
-    for i in range(L):
-        for j in range(L):
-            spin = spins[i,j]
-            
-            r_neighbour = spins[i, (j+1) % L]
-            d_neighbour = spins[(i+1) % L, j]
-            
-            # -J * cos (spin of angle - neighbour spin angle)
-            energy += -J * (np.cos(spin - r_neighbour) + np.cos(spin - d_neighbour))
-    return energy
-
-def XY_Metropolis(spins, T):
-    """
-    One sweep of the XY
-    lattice.
-    """
-    for _ in range(L*L):
-        i = random.randint(0, L-1)
-        j = random.randint(0, L-1)
-    
-    #Four Neighbours
-    neighbours_sum = (
-        spins[(i-1) % L, j] + # Down
-        spins[(i+1) % L, j] + # Up
-        spins[i, (j+1) % L] + # Right
-        spins[i, (j-1) % L]   # Left
-    )
-    delta_E = 2*J*spin
 
 
 def lattice():
@@ -236,3 +184,100 @@ if rank == 0:
 # The X-Y model incorporates angles into the spins, so instead of
 # spins up or down, they can have an infinite number of variations
 # in between 0 and 2pi
+
+def XY_lattice():
+    """
+    Function which creates a lattice filled
+    with randomly oriented spins which can
+    range from 0 - 2pi
+    """
+    
+    lattice = np.zeros((L,L), dtype=float)
+    
+    for i in range(L):
+        for j in range(L):
+            lattice[i,j] = random.uniform(0, 2*np.pi) #Random uniform is a good choice
+            # since we're now allowing any value change between 0 and 2pi
+            # as opposed to the metropolis where we were restricted to two choices
+            
+    return lattice
+            
+
+def XY_Energy(spins):
+    """
+    The XY energy of the 2D Lattice
+    """
+    energy = 0
+    
+    for i in range(L):
+        for j in range(L):
+            spin = spins[i,j]
+            
+            r_neighbour = spins[i, (j+1) % L]
+            d_neighbour = spins[(i+1) % L, j]
+            
+            # -J * cos (spin of angle - neighbour spin angle)
+            energy += -J * (np.cos(spin - r_neighbour) + np.cos(spin - d_neighbour))
+    return energy
+
+def XY_Metropolis(spins, T):
+    """
+    One sweep of the XY
+    lattice.
+    """
+    for _ in range(L*L):
+        i = random.randint(0, L-1)
+        j = random.randint(0, L-1)
+    
+    #Four Neighbours
+    neighbours_sum = (
+        down = spins[(i-1) % L, j] + # Down
+        up = spins[(i+1) % L, j] + # Up
+        right = spins[i, (j+1) % L] + # Right
+        left = spins[i, (j-1) % L]   # Left
+    )
+    # s_i * s_j takes the form cos(theta_i - theta_j) (Just the dot product of s_i and s_j)
+    # so XY Energy = J*cos(theta_i - theta_j)
+    # I have chosen to subtract the initial energy of the XY lattice
+    # from the new energy post angle change
+    # Don't use random.choice for delta_angle since it's not a discrete list
+    new_angle = spin + random.uniform(-delta_angle, delta_angle)
+    initial_energy = -J * (np.cos(spin - down) + np.cos(spin - up) + np.cos(spin - right) +
+                           np.cos(spin - left)
+                      )
+    
+    new_energy = -J * (np.cos(new_angle - down) + np.cos(new_angle - up) +
+                       np.cos(new_angle - left) + np.cos(new_angle - right)
+                 )
+    
+    delta_E = new_energy - initial_energy
+    
+    #Acception or Rejection
+    if delta_E <= 0:
+        spins[i,j] = new_angle      # If energy decreases, the angle change is accepted
+        
+    else:
+        w = np.exp(-delta_E / T)
+        if random.random() < w:
+            spins[i,j] = new_angle
+        
+def XY_sim(T):
+    """
+    Sweeps of the XY model at
+    temperature T
+    """
+    spins = XY_lattice()
+    
+    energies = []
+    magnetisation = []
+    
+    for _ in range(N_SWEEPS):
+        XY_metropolis(spins, T)
+        energy = XY_Energy(spins)
+        M = np.sum(spins)
+        
+        energies.append(energy)
+        magnetisation.append(M)
+        
+    return np.mean(energies), np.mean(magnetisation), np.mean(np.array(energies)**2)
+
