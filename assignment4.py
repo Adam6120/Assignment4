@@ -15,7 +15,7 @@ from mpi4py import MPI
 comm = MPI.COMM_WORLD
 nproc = comm.Get_size()
 rank = comm.Get_rank()
-N_SWEEPS = 3                   # Number of sweeps of the metropolis
+N_SWEEPS = 1000                   # Number of sweeps of the metropolis
 N_SPLIT = N_SWEEPS // nproc # Splitting work among processors
 temperatures = np.linspace(1, 10, 30) #Array of temperatures 
 delta_angle = np.pi
@@ -23,7 +23,6 @@ delta_angle = np.pi
 # Defining Lattice
 
 
-L = 16   # Range of lattice sizes
 H = 0              # External magnetic field set to 0
 J = 1              # Ferromagnetic model
 
@@ -31,27 +30,23 @@ J = 1              # Ferromagnetic model
 # J = 1 so this reduces further to E = -sum(i,j) of s_i s_j
 
 
-def lattice():
+def lattice(L):
     """
     Function which creates a lattice filled with
     randomly oriented spins +- 1
     """
-    lattice = np.zeros((L,L), dtype=int)
+    grid = np.zeros((L,L), dtype=int)
     
     for i in range(L):      # Using two loops since we're in 2D
         for j in range(L):  # Using two loops since we're in 2D
-            lattice[i,j] = random.choice([-1,1]) # Equal chance of spin being -1 or 1
+            grid[i,j] = random.choice([-1,1]) # Equal chance of spin being -1 or 1
             
-    return lattice          # Returns a L x L grid of random spins
-    
+    return grid          # Returns a L x L grid of random spins
 
-spins = lattice()
-print(spins)                # Making sure it prints
-
-def ising_energy(spins):   # Ising Energy which is the energy of a ferromagnetic system
-                           # based on the spins of neighbouring particles is equal to the
-                           # negative of the interaction strength multiplied by the sum of
-                           # the product of spins of the neighburing atom
+def ising_energy(spins, L):   # Ising Energy which is the energy of a ferromagnetic system
+                              # based on the spins of neighbouring particles is equal to the
+                              # negative of the interaction strength multiplied by the sum of
+                              # the product of spins of the neighburing atom
     """
     The ising energy of the 2D Lattice
     """
@@ -59,16 +54,14 @@ def ising_energy(spins):   # Ising Energy which is the energy of a ferromagnetic
     
     for i in range(L):
         for j in range(L):
-            spin = spins[i,j]                                           # Extracts each spin from the lattice
-                                                                        # The <i,j> in the formula means nearest neighours
+                                                       # Extracts each spin from the lattice
+                                                       # The <i,j> in the formula means nearest neighours
             r_neighbour = spins[i, (j+1) % L]                                     # (i,j) is the spin at location (i,j) which is
             d_neighbour = spins[(i+1) % L, j]                                     # multiplied by a neighbouring spin such that
-            
-            energy += -spin * (r_neighbour + d_neighbour)
+
+            energy += -spins[i,j] * (r_neighbour + d_neighbour)
     return energy                                                            # E = -(spin * neighbour spin) (summed over all (i,j))
-    
-E = ising_energy(spins)
-print(E)                                                                    # So confusingly, s_i is the spin at (i,j)
+                                                                    # So confusingly, s_i is the spin at (i,j)
                                                                        # and s_j is the spin at (i,j+1)
 
                                           # a b c d
@@ -77,7 +70,7 @@ print(E)                                                                    # So
                                           
 
 #For the metropolis algorithm, we're now interested in four neighbours per point.
-def metropolis(spins, T):
+def metropolis(spins, T, L):
     """
     One sweep of the lattice
     Using equation 9.15 from notes
@@ -93,7 +86,7 @@ def metropolis(spins, T):
             spins[i, (j+1) % L] + #Right
             spins[i, (j-1) % L]   #Left
         )
-        delta_E = 2*J*spins[i,j] * neighbours_sum  # Equation 9.15 fledged out
+        delta_E = 2 * J * spins[i,j] * neighbours_sum  # Equation 9.15 fledged out
         
         #Acceptance or Rejection
         if delta_E <= 0:
@@ -274,10 +267,98 @@ def XY_sim(T):
     for _ in range(N_SWEEPS):
         XY_metropolis(spins, T)
         energy = XY_Energy(spins)
-        M = np.sum(spins)
+        #We are no longer summing 1's and -1's for magnetization.
+        #We are summing the cosine of all the angles of spins in the lattice
+        M = np.sum(np.cos(spins) + np.sum(np.sin(spins))
         
         energies.append(energy)
         magnetisation.append(M)
         
     return np.mean(energies), np.mean(magnetisation), np.mean(np.array(energies)**2)
 
+if rank < nproc - 1:
+    start = rank * N_SPLIT
+    end = start + N_SPLIT
+else: 
+    start = rank * N_SPLIT
+    end = N_SWEEPS
+    
+for T in temperatures:
+    localE = 0
+    localM = 0
+    localE2 = 0
+    
+    for _ in range(start,end):
+        TotalE, TotalM, TotalE2 = XY_sim(T)
+        localE += TotalE
+        localM += TotalM
+        localE2 += TotalE2
+        
+    globalE = comm.reduce(localE, op=MPI.SUM, root=0)
+    globalM = comm.reduce(localM, op=MPI.SUM, root=0)
+    globalE2 = comm.reduce(localE2, op=MPI.SUM, root=0)
+    
+    if rank == 0:
+        Cv = 1/1.38E-23 * T**2 * (globalE2 - E**2)
+        print(f"T={T:.2f}, E={globalE:.2f}, M={globalM:.2f}, E2={globalE2:.2f}")
+    
+    # Frction of the lattice from 10% - 100%
+    x_fracs = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0]
+    average_spin = []
+    for x_frac in x_fracs: # For each % in x_fracs
+        x = int(r_frac * L) # Added int because of index error, add it for everything now.
+        average = spin_correlation(spins, r)
+        average_spin.append(average)
+    
+    plt.plot(r_fracs, all_corr)
+    plt.title(f'XY Model: Spin Correlation vs Fractional Separation, T={T:.2f}, L={L}')
+    plt.xlabel('r/L')
+    plt.ylabel('Spin Correlation')
+    plt.savefig(f'XY_correlation_T{T:.2f}_{nproc}.png', dpi=300)
+    plt.close()
+    
+comm.Barrier()
+if rank == 0:
+    endtime = time.time()
+    print(f"Number of processors: {nproc}")
+    print(f"Timing: {endtime - starttime:.4f} seconds")
+    
+    plt.plot(temperatures, E)
+    plt.title(f'XY Model: Energy vs Temperature for Lattice size: {L}, Processors: {nproc}')
+    plt.xlabel('Temperature (kT/J)')
+    plt.ylabel('Energy')
+    plt.savefig(f'XYEnergy_{nproc}.png', dpi=300)
+    plt.close()
+    
+    plt.plot(temperatures, M)
+    plt.title(f'Ising Model: Energy vs Temperature for Lattice size: {L}, Processors: {nproc}')
+    plt.xlabel('Temperature (kT/J)')
+    plt.ylabel('Energy')
+    plt.savefig(f'IsingEnergy_{nproc}.png', dpi=300)
+    plt.close()
+    
+    plt.plot(temperatures, Cv)
+    plt.title(f'Ising Model: Energy vs Temperature for Lattice size: {L}, Processors: {nproc}')
+    plt.xlabel('Temperature (kT/J)')
+    plt.ylabel('Energy')
+    plt.savefig(f'IsingEnergy_{nproc}.png', dpi=300)
+    plt.close()
+        
+
+#Spin Correlation
+# I think this is asking for the average spin as a fraction of the lattice
+# i.e, average spin per x/L
+
+def spin_correlation(spins, x):
+    """
+    Spin correlation across the lattice for fractional
+    distance x/L
+    """
+    correlation = 0      # Total correlation
+    for i in range(L):
+        for j in range(L):
+            # cos(theta_i - theta_j) at separation x, %L sets the boundary
+            correlation += np.cos(spins[i,j] - spins[i, (j+r) % L])
+    return correlation / (L*L)         #Total correlation over entire grid
+
+for L in [16, 32, 64, 128, 256]
