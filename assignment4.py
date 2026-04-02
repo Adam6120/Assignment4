@@ -15,7 +15,7 @@ from mpi4py import MPI
 comm = MPI.COMM_WORLD
 nproc = comm.Get_size()
 rank = comm.Get_rank()
-N_SWEEPS = 1000                   # Number of sweeps of the metropolis
+N_SWEEPS = 10                   # Number of sweeps of the metropolis
 N_SPLIT = N_SWEEPS // nproc # Splitting work among processors
 delta_angle = np.pi
 ising_temperatures = np.linspace(1.0, 3.0, 30) #Array of Ising temperatures
@@ -109,7 +109,7 @@ def ising_sim(T, L):
     for _ in range(N_SWEEPS):
         metropolis(spins, T, L)
         energy = ising_energy(spins, L)
-        M = (np.sum(spins)) #Magnetisation is the sum of all spins in the lattice.
+        M = np.sum(spins) #Magnetisation is the sum of all spins in the lattice.
         
         energies.append(energy)      #Storage of the energy
         magnetisation.append(M)      #Storage of the magnetisation
@@ -247,7 +247,7 @@ comm.Barrier()
 if rank == 0:
     ising_starttime = time.time()
 
-for L in [16, 32, 64, 128, 256]:
+for L in [16]:
     E_results = []
     M_results = []
     E2_results = []
@@ -287,26 +287,26 @@ for L in [16, 32, 64, 128, 256]:
         print(f"Ising Model - Timing: {ising_endtime - ising_starttime:.2f} seconds ")
         plt.plot(ising_temperatures, Cv_results, label=f'L={L}')
      
-    plt.plot(ising_temperatures, E_results)
-    plt.title(f'Ising Model: Energy vs Temperature for Lattice size: {L}, Processors: {nproc}')
-    plt.xlabel('Temperature (kT/J)')
-    plt.ylabel('Energy')
-    plt.savefig(f'IsingEnergy_{nproc}.png', dpi=300)
-    plt.close()
+        plt.plot(ising_temperatures, E_results)
+        plt.title(f'Ising Model: Energy vs Temperature for Lattice size: {L}, Processors: {nproc}')
+        plt.xlabel('Temperature (kT/J)')
+        plt.ylabel('Energy')
+        plt.savefig(f'IsingEnergy_{nproc}.png', dpi=300)
+        plt.close()
     
-    plt.plot(ising_temperatures, M_results)
-    plt.title(f'Ising Model: Magnetization vs Temperature for Lattice size: {L}, Processors: {nproc}')
-    plt.xlabel('Temperature (kT/J)')
-    plt.ylabel('Magnetization')
-    plt.savefig(f'IsingMagnetization_{nproc}.png', dpi=300)
-    plt.close()
+        plt.plot(ising_temperatures, M_results)
+        plt.title(f'Ising Model: Magnetization vs Temperature for Lattice size: {L}, Processors: {nproc}')
+        plt.xlabel('Temperature (kT/J)')
+        plt.ylabel('Magnetization')
+        plt.savefig(f'IsingMagnetization_{nproc}.png', dpi=300)
+        plt.close()
     
-    plt.plot(ising_temperatures, Cv_results)
-    plt.title(f'Ising Model: Specific Heat Capacity vs Temperature for Lattice size: {L}, Processors: {nproc}')
-    plt.xlabel('Temperature (kT/J)')
-    plt.ylabel('Specific Heat Capacity Cv')
-    plt.savefig(f'IsingHeatCapacity_{nproc}.png', dpi=300)
-    plt.close()
+        plt.plot(ising_temperatures, Cv_results)
+        plt.title(f'Ising Model: Specific Heat Capacity vs Temperature for Lattice size: {L}, Processors: {nproc}')
+        plt.xlabel('Temperature (kT/J)')
+        plt.ylabel('Specific Heat Capacity Cv')
+        plt.savefig(f'IsingHeatCapacity_{nproc}.png', dpi=300)
+        plt.close()
 
 #XY Model-----------------------------------------------------
 
@@ -316,45 +316,47 @@ if rank == 0:
     xy_starttime = time.time()
     
 
-for L in [16, 32, 64, 128, 256]:
+for L in [16]:
     E_results = []
     M_results = []
     E2_results = []
     Cv_results = []
+    spins = XY_lattice(L)
     
     for T in xy_temperatures:
         localE = 0
         localM = 0
         localE2 = 0
     
-    for _ in range(start,end):
-        TotalE, TotalM, TotalE2, spins = XY_sim(T, L)
-        localE += TotalE
-        localM += TotalM
-        localE2 += TotalE2
+        for _ in range(start,end):
+            TotalE, TotalM, TotalE2, spins = XY_sim(T, L)
+            localE += TotalE
+            localM += TotalM
+            localE2 += TotalE2
         
         globalE = comm.reduce(localE, op=MPI.SUM, root=0)
         globalM = comm.reduce(localM, op=MPI.SUM, root=0)
         globalE2 = comm.reduce(localE2, op=MPI.SUM, root=0)
     
-    if rank == 0:
-        meanE = globalE / N_SWEEPS
-        meanM = globalM / N_SWEEPS
-        meanE2 = globalE2 / N_SWEEPS
-        Cv = (1 / T**2) * (meanE2 - meanE**2)
-        
-        E_results.append(meanE)
-        M_results.append(meanM)
-        E2_results.append(meanE2)
-        Cv_results.append(Cv)
-        
-        
-        print(f"T={T:.2f}, E={globalE:.2f}, M={globalM:.2f}, E2={globalE2:.2f}, Cv={Cv:.2f}")
-        comm.Barrier()
         if rank == 0:
-            xy_endtime = time.time()
-            print(f"XY Model - Number of processors: {nproc}")
-            print(f"XY Model - Timing: {xy_endtime - xy_starttime:.2f} seconds ")
+            meanE = globalE / N_SWEEPS
+            meanM = globalM / N_SWEEPS
+            meanE2 = globalE2 / N_SWEEPS
+            Cv = (1 / T**2) * (meanE2 - meanE**2)
+        
+            E_results.append(meanE)
+            M_results.append(meanM)
+            E2_results.append(meanE2)
+            Cv_results.append(Cv)
+        
+        
+            print(f"T={T:.2f}, E={globalE:.2f}, M={globalM:.2f}, E2={globalE2:.2f}, Cv={Cv:.2f}")
+        
+    comm.Barrier()
+    if rank == 0:
+        xy_endtime = time.time()
+        print(f"XY Model - Number of processors: {nproc}")
+        print(f"XY Model - Timing: {xy_endtime - xy_starttime:.2f} seconds ")
         
     # Spin Correlations for fractional pieces of the entire lattice for each T
     if rank == 0:
@@ -365,9 +367,10 @@ for L in [16, 32, 64, 128, 256]:
             average = spin_correlation(spins, x, L)  # Correlation between neighours
             average_spin.append(average)
             
-        plt.plot(x_fractions, average_spin, label=f'L={L}')
     
 if rank == 0:
+    # Specific HEAT plot
+    plt.plot(xy_temperatures, Cv_results, label=f'L={L}')
     plt.title(f'XY Model: Specific Heat vs Temperature, Processors: {nproc}')
     plt.xlabel('Temperature (kBT/J)')
     plt.ylabel('Cv')
@@ -375,6 +378,7 @@ if rank == 0:
     plt.savefig(f'XY_Cv_{nproc}.png', dpi=300)
     plt.close()
     
+    plt.plot(x_fractions, average_spin, label=f'L={L}')
     plt.title(f'XY Model: Spin Correlation vs Fractional Separation, L={L}, Processors: {nproc}')
     plt.xlabel('x/L')
     plt.ylabel('Spin Correlation')
