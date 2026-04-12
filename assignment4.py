@@ -4,7 +4,7 @@
 
 """
 Simulation of the 2D Ising model using Metropolis Monte Carlo
-""" 
+"""
 
 import random
 import time
@@ -15,11 +15,12 @@ from mpi4py import MPI
 comm = MPI.COMM_WORLD
 nproc = comm.Get_size()
 rank = comm.Get_rank()
-N_SWEEPS = 10                   # Number of sweeps of the metropolis
+N_SWEEPS = 1500                   # Number of sweeps of the metropolis
 N_SPLIT = N_SWEEPS // nproc # Splitting work among processors
 delta_angle = np.pi
 ising_temperatures = np.linspace(1.0, 3.0, 30) #Array of Ising temperatures
 xy_temperatures = np.linspace(0.5, 1.5, 30) #Array of XY temperatures
+N_BURN = 500
 #=====================================#
 # Defining Lattice
 
@@ -37,11 +38,11 @@ def lattice(L):
     randomly oriented spins +- 1
     """
     grid = np.zeros((L,L), dtype=int)
-    
+
     for i in range(L):      # Using two loops since we're in 2D
         for j in range(L):  # Using two loops since we're in 2D
             grid[i,j] = random.choice([-1,1]) # Equal chance of spin being -1 or 1
-            
+
     return grid          # Returns a L x L grid of random spins
 
 def ising_energy(spins, L):   # Ising Energy which is the energy of a ferromagnetic system
@@ -52,7 +53,7 @@ def ising_energy(spins, L):   # Ising Energy which is the energy of a ferromagne
     The ising energy of the 2D Lattice
     """
     energy = 0             # Energy initially zero, gets updated throughout the loop.
-    
+
     for i in range(L):
         for j in range(L):
                                                        # Extracts each spin from the lattice
@@ -68,7 +69,7 @@ def ising_energy(spins, L):   # Ising Energy which is the energy of a ferromagne
                                           # a b c d
                                           # e f g h          where (i,j) = a  s_i = a, s_j = (b, right neighbour) and (e, down neighbour)
                                           # i j k l          so the ising energy sums those: a*b + a*e for that location (i,j)
-                                          
+
 
 #For the metropolis algorithm, we're now interested in four neighbours per point.
 def metropolis(spins, T, L):
@@ -88,7 +89,7 @@ def metropolis(spins, T, L):
             spins[i, (j-1) % L]   #Left
         )
         delta_E = 2 * J * spins[i,j] * neighbours_sum  # Equation 9.15 fledged out
-        
+
         #Acceptance or Rejection
         if delta_E <= 0:
             spins[i,j] = -1 * spins[i,j] # Flip the sign
@@ -96,12 +97,16 @@ def metropolis(spins, T, L):
             w = np.exp(-delta_E / T)   #If E > 0, this is the probability of acceptance
             if random.random() < w:
                 spins[i,j] = -1 * spins[i,j] # Flip the sign
-                
+
 def ising_sim(T, L):
     """
     Sweeps of the ising model at a temperature T
     """
     spins = lattice(L)
+    for _ in range(N_BURN):
+        metropolis(spins, T, L)    # Adding burn in to NOT measure the initial sweeps
+                                   #Burn in simply lets the randomly oriented lattice succumb to the effect
+                                   # of the temperature we are applying to it
  
     energies = []
     magnetisation = []
@@ -109,7 +114,7 @@ def ising_sim(T, L):
     for _ in range(N_SWEEPS):
         metropolis(spins, T, L)
         energy = ising_energy(spins, L)
-        M = np.sum(spins) #Magnetisation is the sum of all spins in the lattice.
+        M = abs(np.sum(spins)) #Magnetisation is the sum of all spins in the lattice.
         
         energies.append(energy)      #Storage of the energy
         magnetisation.append(M)      #Storage of the magnetisation
@@ -203,7 +208,13 @@ def XY_sim(T, L):
     Sweeps of the XY model at
     temperature T
     """
+
     spins = XY_lattice(L)
+    for _ in range(N_BURN):           #Burn in simply lets the randomly oriented lattice succumb to the effect
+                                      # of the temperature we are applying to it
+        XY_Metropolis(spins, T, L)
+
+    
     
     energies = []
     magnetisation = []
@@ -234,12 +245,6 @@ def spin_correlation(spins, x, L):
     return correlation / (L*L)         #Total correlation over entire grid
 
 
-if rank < nproc -1:
-    start = rank * N_SPLIT
-    end = start + N_SPLIT
-else:                                 #MPI Timing Chunk
-    start = rank * N_SPLIT
-    end = N_SWEEPS
     
 # Task 3: Ising Temperature
 comm.Barrier()
@@ -247,45 +252,39 @@ comm.Barrier()
 if rank == 0:
     ising_starttime = time.time()
 
-for L in [16]:
+for L in [16, 32, 64, 128, 256]:
     E_results = []
     M_results = []
     E2_results = []
     Cv_results = []
 
     for T in ising_temperatures:
-        localE = 0
-        localM = 0
-        localE2 = 0
+
     
-        for _ in range(start,end):
-            TotalE, TotalM, TotalE2 = ising_sim(T, L)
-            localE += TotalE
-            localM += TotalM
-            localE2 += TotalE2
         
-        globalE = comm.reduce(localE, op=MPI.SUM, root=0)
-        globalM = comm.reduce(localM, op=MPI.SUM, root=0)
-        globalE2 = comm.reduce(localE2, op=MPI.SUM, root=0)
+        TotalE, TotalM, TotalE2 = ising_sim(T, L)
+        
+        globalE = comm.reduce(TotalE, op=MPI.SUM, root=0)
+        globalM = comm.reduce(TotalM, op=MPI.SUM, root=0)
+        globalE2 = comm.reduce(TotalE2, op=MPI.SUM, root=0)
     
         if rank == 0:
-            meanE = globalE / N_SWEEPS            # Average values
-            meanM = globalM / N_SWEEPS
-            meanE2 = globalE2 / N_SWEEPS
-            Cv = 1/T**2 * (meanE2 - meanE**2) #Got rid of kB because we want units of kB/J
+            meanE = globalE / nproc / (L*L)          # Average values and now calcualates per spin
+            meanM = abs(globalM / nproc / (L*L))
+            meanE2 = globalE2 / nproc / (L*L)**2     # Wasn't squaring E2 properly
+            Cv = 1/T**2 * (meanE2 - meanE**2) * (L*L) #Got rid of kB because we want units of kB/J
         
             E_results.append(meanE)
             M_results.append(meanM)
             E2_results.append(meanE2)
             Cv_results.append(Cv)
-            print(f"T={T:.2f}, E={globalE:.2f}, M={globalM:.2f}, E2={globalE2:.2f}, Cv={Cv:.2f}")
+            print(f"T={T:.2f}, E={meanE:.2f}, M={meanM:.2f}, E2={meanE2:.2f}, Cv={Cv:.2f}")
     
     comm.Barrier()
     if rank == 0:
         ising_endtime = time.time()
-        print(f"Ising Model - Number of processors: {nproc}")
-        print(f"Ising Model - Timing: {ising_endtime - ising_starttime:.2f} seconds ")
-        plt.plot(ising_temperatures, Cv_results, label=f'L={L}')
+        print(f"Ising Model - Lattice Size: {L}, Number of processors: {nproc}---------------------------------------")
+        print(f"Ising Model - Lattice Size: {L}, Timing: {ising_endtime - ising_starttime:.2f} seconds. ------------- ")
      
         plt.plot(ising_temperatures, E_results)
         plt.title(f'Ising Model: Energy vs Temperature for Lattice size: {L}, Processors: {nproc}')
@@ -308,7 +307,7 @@ for L in [16]:
         plt.savefig(f'IsingHeatCapacity_{nproc}.png', dpi=300)
         plt.close()
 
-#XY Model-----------------------------------------------------
+#XY Model-----------------------------------------------------------------------------------------
 
 
 comm.Barrier()
@@ -316,33 +315,32 @@ if rank == 0:
     xy_starttime = time.time()
     
 
-for L in [16]:
+for L in [16, 32, 64, 128, 256]:
     E_results = []
     M_results = []
     E2_results = []
     Cv_results = []
-    spins = XY_lattice(L)
+
+    if rank == 0:
+        x_fractions = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0]
+        correlation_results = []
     
     for T in xy_temperatures:
-        localE = 0
-        localM = 0
-        localE2 = 0
+
     
-        for _ in range(start,end):
-            TotalE, TotalM, TotalE2, spins = XY_sim(T, L)
-            localE += TotalE
-            localM += TotalM
-            localE2 += TotalE2
+        TotalE, TotalM, TotalE2, spins = XY_sim(T, L)
+
         
-        globalE = comm.reduce(localE, op=MPI.SUM, root=0)
-        globalM = comm.reduce(localM, op=MPI.SUM, root=0)
-        globalE2 = comm.reduce(localE2, op=MPI.SUM, root=0)
+        globalE = comm.reduce(TotalE, op=MPI.SUM, root=0)
+        globalM = comm.reduce(TotalM, op=MPI.SUM, root=0)
+        globalE2 = comm.reduce(TotalE2, op=MPI.SUM, root=0)
     
         if rank == 0:
-            meanE = globalE / N_SWEEPS
-            meanM = globalM / N_SWEEPS
-            meanE2 = globalE2 / N_SWEEPS
-            Cv = (1 / T**2) * (meanE2 - meanE**2)
+            meanE = globalE / nproc / (L*L) # /L*L for per spin
+            meanM = abs(globalM / nproc / (L*L)) # Adding absolute value because getting negative magnetisation
+            meanE2 = globalE2 / nproc / (L*L)**2
+            Cv = (1 / T**2) * (meanE2 - meanE**2) *(L*L)  # Forgot to convert Cv to per spin
+            # Hopefully this will fix the super low Cv values all across
         
             E_results.append(meanE)
             M_results.append(meanM)
@@ -350,22 +348,27 @@ for L in [16]:
             Cv_results.append(Cv)
         
         
-            print(f"T={T:.2f}, E={globalE:.2f}, M={globalM:.2f}, E2={globalE2:.2f}, Cv={Cv:.2f}")
+            print(f"T={T:.2f}, E={meanE:.2f}, M={meanM:.2f}, E2={meanE2:.2f}, Cv={Cv:.2f}")
         
+            correlation_T = []                   # Correlation for each T, empty array
+
+
+             # Spin Correlations for fractional pieces of the entire lattice for each T
+
+            for x_fraction in x_fractions:
+                x = int(x_fraction * L)          # Fraction in terms of lattice size
+                average = spin_correlation(spins, x, L)  # Correlation between neighours
+                correlation_T.append(average)
+
+            correlation_results.append(correlation_T)
+
+
     comm.Barrier()
     if rank == 0:
         xy_endtime = time.time()
-        print(f"XY Model - Number of processors: {nproc}")
-        print(f"XY Model - Timing: {xy_endtime - xy_starttime:.2f} seconds ")
-        
-    # Spin Correlations for fractional pieces of the entire lattice for each T
-    if rank == 0:
-        x_fractions = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0]
-        average_spin = []
-        for x_fraction in x_fractions:
-            x = int(x_fraction * L)          # Fraction in terms of lattice size
-            average = spin_correlation(spins, x, L)  # Correlation between neighours
-            average_spin.append(average)
+        print(f"XY Model - Lattice Size: {L}, Number of processors: {nproc}------------------------------------------")
+        print(f"XY Model - Lattice Size: {L}, Timing: {xy_endtime - xy_starttime:.2f} seconds------------------------ ")
+
             
     
 if rank == 0:
@@ -378,7 +381,11 @@ if rank == 0:
     plt.savefig(f'XY_Cv_{nproc}.png', dpi=300)
     plt.close()
     
-    plt.plot(x_fractions, average_spin, label=f'L={L}')
+    # Selecting lowest, middle and highest temperature values from correlation_results
+    # This array will have 30 entries, double checked with len(correlation_results)
+    plt.plot(x_fractions, correlation_results[0],  label=f'T={xy_temperatures[0]:.2f}K')   # Low T: 
+    plt.plot(x_fractions, correlation_results[14], label=f'T={xy_temperatures[14]:.2f}K')  # Mid T:
+    plt.plot(x_fractions, correlation_results[29], label=f'T={xy_temperatures[29]:.2f}K')  # High T:  
     plt.title(f'XY Model: Spin Correlation vs Fractional Separation, L={L}, Processors: {nproc}')
     plt.xlabel('x/L')
     plt.ylabel('Spin Correlation')
