@@ -276,7 +276,7 @@ def main():
     Wrapping all executable code
     in a main function to prevent
     the creation of global
-    variables
+    variables being flagged
     """
 # Used highlight = tab to auto indent eveyrthing
 
@@ -477,3 +477,10 @@ def main():
         plt.grid(True)
         plt.savefig(f'XY_correlation_{nproc}.png', dpi=300)
         plt.close()
+
+
+if __name__ == "__main__":
+    main()
+
+# Line to fix code not running, placed at the bottom to let all variables be defined
+# Before running the code.
