@@ -21,6 +21,7 @@ delta_angle = np.pi
 ising_temperatures = np.linspace(1.0, 3.0, 30) #Array of Ising temperatures
 xy_temperatures = np.linspace(0.5, 1.5, 30) #Array of XY temperatures
 N_BURN = 500
+N_BURN_SPLIT = N_BURN // nproc    
 #=====================================#
 # Defining Lattice
 
@@ -110,7 +111,7 @@ def ising_sim(temperature, lattice_size):
     Sweeps of the ising model at a temperature T
     """
     spins = lattice(lattice_size)
-    for _ in range(N_BURN):
+    for _ in range(N_BURN_SPLIT):
         metropolis(spins, temperature, lattice_size)
 
 # Adding burn in to NOT measure the initial sweeps
@@ -120,7 +121,7 @@ def ising_sim(temperature, lattice_size):
     energies = []
     magnetisation = []
 
-    for _ in range(N_SWEEPS):
+    for _ in range(N_SPLIT):
         metropolis(spins, temperature, lattice_size)
         energy = ising_energy(spins, lattice_size)
         mag = abs(np.sum(spins)) #Magnetisation is the sum of all spins in the lattice.
@@ -230,7 +231,7 @@ def xy_sim(temperature, lattice_size):
 # Of the temperature we are applying to it
 
     spins = xy_lattice(lattice_size)
-    for _ in range(N_BURN):
+    for _ in range(N_BURN_SPLIT):
 
 
         xy_metropolis(spins, temperature, lattice_size)
@@ -240,7 +241,7 @@ def xy_sim(temperature, lattice_size):
     energies = []
     magnetisation = []
 
-    for _ in range(N_SWEEPS):
+    for _ in range(N_SPLIT):
         xy_metropolis(spins, temperature, lattice_size)
         energy = xy_energy(spins, lattice_size)
         #We are no longer summing 1's and -1's for magnetization.
@@ -281,12 +282,13 @@ def main():
 # Used highlight = tab to auto indent eveyrthing
 
 # Task 3: Ising Temperature
-    comm.Barrier()
 
-    if rank == 0:
-        ising_starttime = time.time()
 
-    for lattice_size in [16]:
+    for lattice_size in [16, 32, 64, 128]:
+        comm.Barrier()
+        if rank == 0:
+            ising_starttime = time.time()
+
         e_results = []
         m_results = []
         e2_results = []
@@ -367,13 +369,10 @@ def main():
 
     #XY Model--------------------------------------------------------------------------------------
 
-
-    comm.Barrier()
-    if rank == 0:
-        xy_starttime = time.time()
-
-
-    for lattice_size in [16]:
+    for lattice_size in [16, 32, 64, 128]:
+        comm.Barrier()
+        if rank == 0:
+            xy_starttime = time.time()
         e_results = []
         m_results = []
         e2_results = []
